@@ -175,80 +175,68 @@ export default class Realtime extends EventEmitter {
     return this._openPromise;
   }
 
-  _getEndpoints(options) {
-    return Promise.resolve(
-      this._cache.get('endpoints') ||
-      this
-        .constructor
-        ._fetchEndpointsInfo(options)
-        .then(
-          tap(info => this._cache.set('endpoints', info, info.ttl * 1000))
-        )
-    ).then((info) => {
-      debug('endpoint info:', info);
-      return [info.server, info.secondary];
-    });
+  async _getEndpoints(options) {
+    let info = this._cache.get('endpoints');
+    if (!info) {
+      info = await this.constructor._fetchEndpointsInfo(options);
+      this._cache.set('endpoints', info, info.ttl * 1000);
+    }
+    debug('endpoint info:', info);
+    return [info.server, info.secondary];
   }
 
-  static _fetchPushRouter({ appId, region }) {
+  static async _fetchPushRouter({ appId, region }) {
     debug('fetch router');
     switch (region) {
       case 'cn': {
-        const cachedPushRouter = pushRouterCache.get(appId);
-        if (cachedPushRouter) {
-          return Promise.resolve(cachedPushRouter);
-        }
-        return axios
-          .get('https://app-router.leancloud.cn/1/route', {
+        try {
+          const cachedPushRouter = pushRouterCache.get(appId);
+          if (cachedPushRouter) {
+            return cachedPushRouter;
+          }
+          const route = (await axios.get('https://app-router.leancloud.cn/1/route', {
             params: {
               appId,
             },
             timeout: 20000,
-          })
-          .then(
-            res => res.data
-          )
-          .then(tap(debug))
-          .then(
-            (route) => {
-              const pushRouter = route.push_router_server;
-              if (!pushRouter) {
-                throw new Error('push router not exists');
-              }
-              let ttl = route.ttl;
-              if (typeof ttl !== 'number') {
-                ttl = 3600;
-              }
-              pushRouterCache.set(appId, pushRouter, ttl * 1000);
-              return pushRouter;
-            }
-          )
-          .catch(() => 'router-g0-push.leancloud.cn');
+          })).data;
+          debug(route);
+          const pushRouter = route.push_router_server;
+          if (!pushRouter) {
+            throw new Error('push router not exists');
+          }
+          let ttl = route.ttl;
+          if (typeof ttl !== 'number') {
+            ttl = 3600;
+          }
+          pushRouterCache.set(appId, pushRouter, ttl * 1000);
+          return pushRouter;
+        } catch (error) {
+          return 'router-g0-push.leancloud.cn';
+        }
       }
       case 'us':
-        return Promise.resolve('router-a0-push.leancloud.cn');
+        return 'router-a0-push.leancloud.cn';
       default:
         throw new Error(`Region [${region}] is not supported.`);
     }
   }
 
-  static _fetchEndpointsInfo({ appId, region, ssl, server }) {
+  static async _fetchEndpointsInfo({ appId, region, ssl, server }) {
     debug('fetch endpoint info');
-    return this._fetchPushRouter({ appId, region })
-      .then(tap(debug))
-      .then(router =>
-        axios.get(`https://${router}/v1/route`, {
-          params: {
-            appId,
-            secure: ssl,
-            server,
-            _t: Date.now(),
-          },
-          timeout: 20000,
-        }).then(
-          res => res.data
-        ).then(tap(debug))
-    );
+    const router = await this._fetchPushRouter({ appId, region });
+    debug(router);
+    const info = (await axios.get(`https://${router}/v1/route`, {
+      params: {
+        appId,
+        secure: ssl,
+        server,
+        _t: Date.now(),
+      },
+      timeout: 20000,
+    })).data;
+    debug(info);
+    return info;
   }
 
   _close() {

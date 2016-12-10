@@ -48,7 +48,13 @@ var require = require || function(id) {throw new Error('Unexpected required ' + 
   var babelrc = JSON.parse(fs.readFileSync('./.babelrc'));
   var babelConfigs = Object.assign(babelrc, {
     plugins: babelrc.plugins,
-    presets: [["es2015", { "modules": false }]],
+    presets: [
+      ["latest", {
+        "es2015": {
+          "modules": false
+        }
+      }]
+    ],
     babelrc: false,
     runtimeHelpers: true,
   });
